@@ -31,6 +31,7 @@
     cases: "gzb_cases_v1"
   };
   var API_BASE = window.API_BASE || "http://127.0.0.1:8138/api/v1";
+  var WORKSPACE_ENABLED = !window.APP_CONFIG || window.APP_CONFIG.workspace !== false;
 
   var currentRoute = "home";
   var CITY_NAMES = { gz: "广州", sh: "上海" }; // 城市代码 → 显示名；新增城市在此登记（如 sz: "深圳"）
@@ -572,7 +573,9 @@
               ? '<div class="row-list">' + recentPubs.map(function (p) { return rowListItem(p, "发布于 " + p.publishDate + " · " + p.category); }).join("") + "</div>"
               : emptyState("近期没有即将到期的条目")) +
         "</div>" +
-        '<div class="band"><div class="band-head"><h2>' + icon("refresh-cw") + " 最近更新</h2><a class=\"small\" href=\"#/workspace\">核验台</a></div>" +
+        '<div class="band"><div class="band-head"><h2>' + icon("refresh-cw") + " 最近更新</h2>" +
+          (WORKSPACE_ENABLED ? '<a class="small" href="#/workspace">核验台</a>' : "") +
+        "</div>" +
           (recent.length ? '<div class="row-list">' + recent.map(function (p) { return rowListItem(p, (p.updatedAt || "") + " 更新 · " + p.category); }).join("") + "</div>" : emptyState("暂无更新记录")) +
         "</div>" +
       "</section>" +
@@ -1756,6 +1759,10 @@
     var parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
     var name = parts[0] || "home";
     currentRoute = name;
+    if (name === "workspace" && !WORKSPACE_ENABLED) {
+      name = "home";
+      currentRoute = "home";
+    }
     if (name !== "home" && name !== "cases" && !POLICIES.length) {
       var loadingApp = document.getElementById("app");
       if (loadingApp) {
