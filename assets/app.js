@@ -1568,8 +1568,10 @@
 
   function renderCases() {
     var items = readJSON(KEYS.cases, []);
-    var listHtml = items.length
-      ? items.slice().reverse().map(function (c) {
+    var approved = items.filter(function (c) { return c.approved; });
+    var pendingCount = items.length - approved.length;
+    var listHtml = approved.length
+      ? approved.slice().reverse().map(function (c) {
           return '<div class="case-item"><div class="case-item-head"><strong>' + esc(c.policy || "未填写政策") + "</strong>" +
             '<span class="badge badge-cat">' + esc(c.city || "未填写城市") + "</span></div>" +
             "<p>" + esc(c.detail || "") + "</p>" +
@@ -1577,7 +1579,7 @@
             "<span>" + icon("clipboard-list") + " 缺材料：" + esc(c.missing || "无") + "</span></div>" +
             '<div class="case-item-tip">' + icon("lightbulb") + " 建议：" + esc(c.advice || "未填写") + "</div></div>";
         }).join("")
-      : emptyState("首批真实办理案例正在征集，提交后经人工核验再公开展示。");
+      : emptyState("首批真实办理案例正在征集，提交后经人工核验再公开展示。" + (pendingCount ? "（你已提交 " + pendingCount + " 条，等待核验）" : ""));
 
     return (
       '<div class="page-head"><div><span class="eyebrow">' + icon("users") + " 独家内容</span>" +
@@ -1605,11 +1607,13 @@
     var tabs = [
       { id: "verify", label: "数据核验", ic: "shield-check" },
       { id: "stats", label: "本地统计", ic: "bar-chart-3" },
-      { id: "inbox", label: "提交记录", ic: "inbox" }
+      { id: "inbox", label: "提交记录", ic: "inbox" },
+      { id: "cases", label: "案例核验", ic: "users" }
     ];
     var body = "";
     if (wsTab === "verify") body = wsVerify();
     else if (wsTab === "stats") body = wsStats();
+    else if (wsTab === "cases") body = wsCases();
     else body = wsInbox();
 
     return (
@@ -1720,6 +1724,23 @@
           '<div class="desc">' + esc(c.desc) + "</div>" +
           '<div class="meta">' + esc(c.type) + " · " + esc(c.contact || "未留联系方式") + " · " + fmtDate(c.createdAt) + "</div></div>";
         }).join("") : emptyState("还没有纠错提交")) +
+      "</div>"
+    );
+  }
+
+  function wsCases() {
+    var items = readJSON(KEYS.cases, []);
+    var pending = items.filter(function (c) { return !c.approved; });
+    return (
+      '<div class="band"><div class="band-head"><h2>' + icon("users") + " 待核验案例</h2>" +
+        '<div class="checklist-toolbar"><button class="btn btn-sm" data-action="export-csv" data-kind="cases">' + icon("download") + " 导出 CSV</button></div></div>" +
+        (pending.length ? pending.slice().reverse().map(function (c) {
+          return '<div class="correction-item"><div class="top"><strong>' + esc(c.policy || "未填写政策") + "</strong>" +
+            '<button class="btn btn-sm" data-action="approve-case" data-id="' + esc(c.id) + '">' + icon("check") + " 批准公开</button>" +
+          "</div>" +
+          '<div class="desc">' + esc(c.advice || "") + "</div>" +
+          '<div class="meta">' + esc(c.city || "未填写城市") + " · 跑了 " + esc(String(c.trips || "未填写")) + " 趟 · 缺材料：" + esc(c.missing || "无") + " · " + fmtDate(c.createdAt) + "</div></div>";
+        }).join("") : emptyState("暂无待核验案例")) +
       "</div>"
     );
   }
@@ -2042,6 +2063,7 @@
         missing: caseForm.querySelector("#caseMissing").value.trim(),
         advice: advice,
         detail: caseForm.querySelector("#caseDetail").value.trim(),
+        approved: false,
         createdAt: Date.now()
       });
       writeJSON(KEYS.cases, cases);
@@ -2127,6 +2149,15 @@
       rerender();
       return;
     }
+    if (action === "approve-case") {
+      var cases2 = readJSON(KEYS.cases, []);
+      cases2.forEach(function (c) { if (c.id === id) c.approved = true; });
+      writeJSON(KEYS.cases, cases2);
+      track("case_approve", { id: id });
+      toast("案例已批准，将在办理案例页公开");
+      rerender();
+      return;
+    }
     if (action === "export-csv") {
       var kind = el.getAttribute("data-kind");
       if (kind === "pending") {
@@ -2144,6 +2175,11 @@
         var cors = readJSON(KEYS.corrections, []);
         downloadCsv("纠错记录-" + fmtDate(Date.now()) + ".csv", [["时间", "政策", "类型", "描述", "联系方式", "状态"]].concat(cors.map(function (c) {
           return [fmtDate(c.createdAt), c.policyTitle, c.type, c.desc, c.contact, c.handled ? "已处理" : "待处理"];
+        })));
+      } else if (kind === "cases") {
+        var caseRows = readJSON(KEYS.cases, []);
+        downloadCsv("办理案例-" + fmtDate(Date.now()) + ".csv", [["时间", "城市", "政策", "跑了多少趟", "缺材料", "建议", "状态"]].concat(caseRows.map(function (c) {
+          return [fmtDate(c.createdAt), c.city, c.policy, c.trips, c.missing, c.advice, c.approved ? "已公开" : "待核验"];
         })));
       }
       return;
