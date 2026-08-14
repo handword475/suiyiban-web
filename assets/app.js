@@ -596,15 +596,19 @@
     var sel = selectedIds().indexOf(p.id) >= 0;
     var info = deadlineInfo(p);
     var metaLine = [p.source, p.publishDate, p.documentNumber].filter(Boolean).join(" · ");
+    var sourceUrl = p.sourceUrl || p.source_url || "";
+    var summary = String(p.summary || "").trim();
     return (
       '<div class="policy-row" data-cat="' + esc(p.category) + '">' +
         "<div>" +
           '<a class="policy-title" href="#/policy/' + esc(p.id) + '">' + esc(p.title) + "</a>" +
           '<div class="policy-meta">' + catBadge(p) + statusBadge(p) + deadlineBadge(p) + "</div>" +
+          (summary ? '<p class="policy-summary">' + esc(summary.slice(0, 160)) + (summary.length > 160 ? "…" : "") + "</p>" : "") +
         "</div>" +
         '<div class="policy-audience">' + (esc((p.audience || []).join("、")) || esc(metaLine)) + "</div>" +
         '<div class="policy-deadline">' + (info.urgent ? '<strong>' + esc(info.text) + "</strong>" : esc(info.text)) + "</div>" +
         '<div class="policy-actions">' +
+          (sourceUrl ? '<a class="btn btn-sm" href="' + esc(sourceUrl) + '" target="_blank" rel="noopener noreferrer" title="打开官方来源页">' + icon("external-link") + " 官方来源</a>" : "") +
           (p.attachmentUrl ? '<a class="btn btn-sm" href="' + esc(p.attachmentUrl) + '" target="_blank" rel="noopener noreferrer" title="下载官方原文附件">' + icon("download") + " 原文</a>" : "") +
           '<button class="btn btn-sm" data-action="open-policy" data-id="' + esc(p.id) + '">' + icon("eye") + " 详情</button>" +
           '<button class="btn btn-sm ' + (sel ? "btn-primary" : "") + '" data-action="toggle-select" data-id="' + esc(p.id) + '">' +
