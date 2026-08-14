@@ -1199,6 +1199,72 @@ svg {
   border-bottom: 0;
 }
 
+.quiz-result-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+
+.quiz-result-actions .btn {
+  flex: 1 1 180px;
+  justify-content: center;
+}
+
+.case-item {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  margin-bottom: 12px;
+}
+
+.case-item-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.case-item-head strong {
+  font-size: 16px;
+}
+
+.case-item-meta {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 14px;
+  margin-top: 8px;
+}
+
+.case-item-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.case-item-tip {
+  margin-top: 10px;
+  padding: 10px 12px;
+  background: var(--primary-soft);
+  color: var(--primary-dark);
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.loading-state {
+  min-height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 16px;
+}
+
 .match-rank {
   width: 26px;
   height: 26px;

@@ -26,9 +26,11 @@
     verifications: "gzb_verifications_v1",
     material: "gzb_material_v1",
     guide: "gzb_guide_v1",
-    quiz: "gzb_quiz_v1"
+    quiz: "gzb_quiz_v1",
+    city: "gzb_city_v1",
+    cases: "gzb_cases_v1"
   };
-  var API_BASE = window.API_BASE || "";
+  var API_BASE = window.API_BASE || "http://127.0.0.1:8138/api/v1";
 
   var currentRoute = "home";
   var CITY_NAMES = { gz: "广州", sh: "上海" }; // 城市代码 → 显示名；新增城市在此登记（如 sz: "深圳"）
@@ -45,6 +47,8 @@
   var calYear = new Date().getFullYear();
   var calMonth = new Date().getMonth();
   var calMode = "deadline"; // 日历模式：deadline（截止日）| publish（发布日期）
+  var quizShowAll = false;
+  var policyDataPromise = null;
 
   /* ---------- storage helpers ---------- */
 
@@ -99,7 +103,6 @@
   }
 
   function loadRemotePolicies() {
-    if (!API_BASE) return;
     if (window.__remoteLoaded) return;
     var ctrl = typeof AbortController !== "undefined" ? new AbortController() : null;
     var timer = ctrl ? setTimeout(function () { ctrl.abort(); }, 5000) : null;
@@ -119,6 +122,25 @@
       })
       .catch(function () { /* 后端不可用时继续使用本地种子数据 */ })
       .finally(function () { if (timer) clearTimeout(timer); });
+  }
+
+  function loadPolicyData() {
+    if (POLICIES.length) return Promise.resolve(POLICIES);
+    if (!policyDataPromise) {
+      policyDataPromise = new Promise(function (resolve, reject) {
+        var script = document.createElement("script");
+        script.src = "data/policies.js?v=0.1.9";
+        script.onload = function () {
+          POLICIES = window.POLICY_DATA || POLICIES || [];
+          resolve(POLICIES);
+        };
+        script.onerror = function () {
+          reject(new Error("policy data load failed"));
+        };
+        document.head.appendChild(script);
+      });
+    }
+    return policyDataPromise;
   }
 
   /* ---------- small helpers ---------- */
@@ -187,7 +209,8 @@
 
   function deadlineBadge(p) {
     var info = deadlineInfo(p);
-    return '<span class="badge badge-deadline">' + icon("calendar-clock") + esc(info.text) + "</span>";
+    var label = info.days >= 0 && info.days <= 90 ? info.text + "（剩 " + info.days + " 天）" : info.text;
+    return '<span class="badge badge-deadline">' + icon("calendar-clock") + esc(label) + "</span>";
   }
 
   function track(event, payload) {
@@ -416,6 +439,46 @@
     }
   }
 
+  function inferPolicyQuery(input) {
+    var q = String(input || "");
+    var terms = [];
+    if (/毕业|应届|大学生/.test(q)) terms.push("毕业生", "就业");
+    if (/补贴|补助|津贴/.test(q)) terms.push("补贴");
+    if (/落户|入户|户口/.test(q)) terms.push("落户");
+    if (/住房|租房|购房|公积金/.test(q)) terms.push("住房", "公积金");
+    if (/医保|医疗/.test(q)) terms.push("医保", "医疗");
+    if (/社保|养老/.test(q)) terms.push("社保", "养老");
+    if (/创业|开店/.test(q)) terms.push("创业");
+    if (/失业|待业|求职/.test(q)) terms.push("失业", "就业");
+    return terms.length ? terms.join(" ") : q;
+  }
+
+  function locateCityFromIp() {
+    if (quizAnswers.city || readJSON(KEYS.city, null)) return;
+    var cbName = "__gzbIp" + Date.now();
+    window[cbName] = function (data) {
+      try {
+        var regions = window.CHINA_REGIONS || {};
+        var province = data && data.pro;
+        var city = data && data.city;
+        if (!data || data.err || !province || !regions[province]) return;
+        var cityList = regions[province] || [];
+        if (city && cityList.indexOf(city) < 0) city = cityList[0] || province;
+        quizAnswers.city = { province: province, city: city || province };
+        writeJSON(KEYS.city, quizAnswers.city);
+        if (currentRoute === "quiz") rerender();
+      } finally {
+        try { delete window[cbName]; } catch (e) {}
+      }
+    };
+    var script = document.createElement("script");
+    script.src = "https://whois.pconline.com.cn/ipJson.jsp?callback=" + cbName + "&_=" + Date.now();
+    script.onerror = function () {
+      try { delete window[cbName]; } catch (e) {}
+    };
+    document.head.appendChild(script);
+  }
+
   /* ---------- home ---------- */
 
   function rowListItem(p, meta, urgent) {
@@ -428,20 +491,43 @@
   }
 
   function renderHome() {
-    var total = POLICIES.length;
-    var pending = POLICIES.filter(function (p) { return p.status === "待核验"; }).length;
-    var verified = total - pending;
+    var home = window.POLICY_HOME || null;
+    var total, pending, verified, expiring, urgent, recentPubs, recent, homeCategories;
+    if (POLICIES.length) {
+      total = POLICIES.length;
+      pending = POLICIES.filter(function (p) { return p.status === "待核验"; }).length;
+      verified = total - pending;
+      expiring = upcomingDeadlines(60).length;
+      urgent = upcomingDeadlines(90).slice(0, 6);
+      recentPubs = POLICIES.filter(function (p) { return p.publishDate; })
+        .sort(function (a, b) { return String(b.publishDate).localeCompare(String(a.publishDate)); })
+        .slice(0, 6);
+      recent = POLICIES.slice().sort(function (a, b) {
+        return String(b.updatedAt).localeCompare(String(a.updatedAt));
+      }).slice(0, 6);
+      homeCategories = CATEGORIES;
+    } else if (home) {
+      total = home.total || 0;
+      pending = home.pending || 0;
+      verified = home.verified || 0;
+      expiring = home.expiring || 0;
+      urgent = home.urgent || [];
+      recentPubs = home.recentPubs || [];
+      recent = home.recent || [];
+      homeCategories = (home.categories || []).map(function (c) { return c.name; });
+    } else {
+      total = 0;
+      pending = 0;
+      verified = 0;
+      expiring = 0;
+      urgent = [];
+      recentPubs = [];
+      recent = [];
+      homeCategories = CATEGORIES;
+    }
     var localVerified = Object.keys(verifications()).length;
     var combinedVerified = Math.min(total, verified + localVerified);
     var verifyPct = total ? Math.round((combinedVerified / total) * 100) : 0;
-    var expiring = upcomingDeadlines(60).length;
-    var urgent = upcomingDeadlines(90).slice(0, 6);
-    var recentPubs = POLICIES.filter(function (p) { return p.publishDate; })
-      .sort(function (a, b) { return String(b.publishDate).localeCompare(String(a.publishDate)); })
-      .slice(0, 6);
-    var recent = POLICIES.slice().sort(function (a, b) {
-      return String(b.updatedAt).localeCompare(String(a.updatedAt));
-    }).slice(0, 6);
 
     return (
       '<section class="band home-top">' +
@@ -468,12 +554,12 @@
       "</section>" +
       renderGuide() +
       '<section class="cat-grid" aria-label="政策分类">' +
-        CATEGORIES.map(function (c) {
-          var n = POLICIES.filter(function (p) { return p.category === c; }).length;
+        homeCategories.map(function (c) {
+          var n = home && home.categories ? (home.categories.filter(function (x) { return x.name === c; })[0] || {}).count : POLICIES.filter(function (p) { return p.category === c; }).length;
           return '<a class="cat-tile" href="#/policies" data-action="cat-filter" data-cat="' + esc(c) + '" data-cat-label="' + esc(c) + '">' +
             icon(CAT_ICONS[c] || "file-text") +
             '<span class="name">' + esc(c) + "</span>" +
-            '<span class="count">' + n + " 条</span></a>";
+            '<span class="count">' + (n || 0) + " 条</span></a>";
         }).join("") +
       "</section>" +
       '<section class="home-cols">' +
@@ -531,7 +617,7 @@
       if (filters.status !== "全部" && (p.status_label || p.status) !== filters.status) return false;
       if (filters.q) {
         var q = filters.q.toLowerCase();
-        var hay = (p.title + " " + (p.summary || "") + " " + (p.audience || []).join(" ") + " " + p.category).toLowerCase();
+        var hay = (p.title + " " + (p.summary || "") + " " + (p.audience || []).join(" ") + " " + (p.tags || []).join(" ") + " " + p.category + " " + (p.amount || "")).toLowerCase();
         if (hay.indexOf(q) < 0) return false;
       }
       return true;
@@ -654,6 +740,7 @@
         fact("building-2", "发文部门", esc(p.source)) +
         fact("stamp", "文号", esc(p.documentNumber || "—")) +
         fact("calendar", "发布日期", esc(p.publishDate || "—")) +
+        fact("refresh-cw", "更新时间", esc(p.updatedAt || p.updated_at || "—")) +
         fact("shield-check", "数据状态", p.auto_filled ? "自动填充待核验（置信度 " + Math.round((p.confidence || 0) * 100) + "%）" : (ver ? "已于 " + ver.at + " 由" + ver.by + "核验" : "尚未人工核验")) +
       "</dl>" +
       '<div class="detail-cols">' +
@@ -963,6 +1050,10 @@
 
   function renderQuiz() {
     if (quizResults) return renderQuizResult();
+    if (!quizAnswers.city) {
+      var savedCity = readJSON(KEYS.city, null);
+      if (savedCity) quizAnswers.city = savedCity;
+    }
     var q = QUIZ[quizStep];
     var answered = quizIsAnswered(q);
     var total = quizTotalSteps();
@@ -996,14 +1087,19 @@
   function renderQuizResult() {
     guideMarkStep("2");
     var results = quizResults || scorePolicies();
-    var top = results.slice(0, 8);
+    var city = (quizAnswers.city || {}).city || "未选择";
+    var top = results.slice(0, quizShowAll ? results.length : 5);
     var matchedCount = results.length;
     return (
       '<div class="quiz-shell">' +
         '<div class="page-head"><div><span class="eyebrow">' + icon("sparkles") + " 自测结果</span>" +
           "<h1>根据你的情况，推荐这些事项</h1>" +
-          "<p>所在城市：" + esc((quizAnswers.city || {}).city || "未选择") + " · 匹配 " + matchedCount + " 条政策，先办“快截止 + 匹配度最高”的。</p></div>" +
-          '<div class="detail-actions"><button class="btn" data-action="quiz-restart">' + icon("rotate-ccw") + " 重新自测</button></div></div>" +
+          "<p>所在城市：" + esc(city) + " · 匹配 " + matchedCount + " 条政策，先办“快截止 + 匹配度最高”的。</p></div>" +
+          '<div class="detail-actions">' +
+            '<button class="btn" data-action="quiz-poster">' + icon("image") + " 生成海报</button>" +
+            '<button class="btn" data-action="quiz-share">' + icon("share-2") + " 分享结果</button>" +
+            '<button class="btn" data-action="quiz-restart">' + icon("rotate-ccw") + " 重新自测</button>" +
+          "</div></div>" +
       '<div class="band">' +
         (top.length ?
           '<div class="result-summary">' + icon("badge-check") +
@@ -1017,11 +1113,62 @@
                 '<button class="btn btn-sm" data-action="toggle-select" data-id="' + esc(r.p.id) + '">' + icon("plus") + " 加入</button>" +
               "</span></div>";
           }).join("") + "</div>" +
-          '<div class="band-body"><button class="btn btn-block" data-action="add-results">' + icon("clipboard-list") + " 把推荐事项全部加入清单</button></div>"
+          '<div class="band-body quiz-result-actions">' +
+            '<button class="btn btn-block" data-action="add-results">' + icon("clipboard-list") + " 把推荐事项全部加入清单</button>" +
+            (results.length > 5 ? '<button class="btn btn-block" data-action="quiz-show-all">' + icon(quizShowAll ? "chevron-up" : "chevron-down") + (quizShowAll ? " 收起结果" : " 查看全部 " + results.length + " 条") + "</button>" : "") +
+          "</div>"
           : emptyState("没有匹配到政策，试试换个答案或直接浏览政策库",
             '<a class="btn btn-sm" href="#/policies">' + icon("file-text") + " 浏览全部政策</a>")) +
       "</div></div>"
     );
+  }
+
+  function downloadQuizPoster() {
+    var results = quizResults || scorePolicies();
+    var city = (quizAnswers.city || {}).city || "全国";
+    var canvas = document.createElement("canvas");
+    canvas.width = 750;
+    canvas.height = 1200;
+    var ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#f3f6f5";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#0f766e";
+    ctx.fillRect(0, 0, canvas.width, 210);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "bold 46px sans-serif";
+    ctx.fillText("穗易办 · 我的可领补贴", 40, 90);
+    ctx.font = "26px sans-serif";
+    ctx.fillText(city + " · 匹配 " + results.length + " 条政策", 40, 150);
+    ctx.fillStyle = "#17252a";
+    ctx.font = "bold 34px sans-serif";
+    ctx.fillText("最该先办的几件事", 40, 275);
+    ctx.font = "27px sans-serif";
+    results.slice(0, 5).forEach(function (r, i) {
+      var y = 345 + i * 125;
+      var title = String(r.p.title || "");
+      if (title.length > 24) title = title.slice(0, 23) + "…";
+      ctx.fillStyle = "#0f766e";
+      ctx.fillText(String(i + 1) + ".", 40, y);
+      ctx.fillStyle = "#17252a";
+      ctx.fillText(title, 80, y);
+      ctx.fillStyle = "#64748b";
+      ctx.font = "21px sans-serif";
+      ctx.fillText((r.p.deadline || "长期有效") + " · " + (r.p.category || ""), 80, y + 34);
+      ctx.font = "27px sans-serif";
+    });
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = "22px sans-serif";
+    ctx.fillText("扫码或访问：handword475.github.io/suiyiban-web/", 40, 1130);
+    try {
+      var a = document.createElement("a");
+      a.download = "穗易办-我的可领补贴-" + fmtDate(Date.now()) + ".png";
+      a.href = canvas.toDataURL("image/png");
+      a.click();
+      toast("海报已生成，可保存后分享");
+      track("quiz_poster", { count: results.length });
+    } catch (e) {
+      toast("海报生成失败，请改用文字分享");
+    }
   }
 
   /* ---------- checklist ---------- */
@@ -1277,6 +1424,34 @@
     return lines.join("\n");
   }
 
+  function buildCalendarIcs() {
+    var lines = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//穗易办//政策日历//CN",
+      "CALSCALE:GREGORIAN",
+      "METHOD:PUBLISH"
+    ];
+    upcomingDeadlines(90).slice(0, 100).forEach(function (p) {
+      var d = parseDeadline(p);
+      if (!d) return;
+      var start = fmtDate(d).replace(/-/g, "") + "T090000";
+      var end = fmtDate(d).replace(/-/g, "") + "T100000";
+      var title = (p.title || "政策截止").replace(/,/g, "，").replace(/;/g, "；");
+      var desc = ((p.summary || "") + " 官方来源：" + (p.sourceUrl || "")).replace(/,/g, "，").replace(/;/g, "；");
+      lines.push("BEGIN:VEVENT");
+      lines.push("UID:" + (p.id || "p") + "@suiyiban");
+      lines.push("DTSTAMP:" + fmtDate(new Date()).replace(/-/g, "") + "T000000");
+      lines.push("DTSTART:" + start);
+      lines.push("DTEND:" + end);
+      lines.push("SUMMARY:" + title);
+      lines.push("DESCRIPTION:" + desc);
+      lines.push("END:VEVENT");
+    });
+    lines.push("END:VCALENDAR");
+    return lines.join("\r\n");
+  }
+
   function renderCalendar() {
     var year = calYear, month = calMonth;
     var first = new Date(year, month, 1);
@@ -1310,7 +1485,8 @@
       : "按月查看可申请、即将截止的事项，避免错过申报窗口。";
     return (
       '<div class="page-head"><div><span class="eyebrow">' + icon("calendar-days") + " 政策日历</span>" +
-        "<h1>" + (calMode === "publish" ? "政策发布日历" : "补贴与办事截止日历") + "</h1><p>" + modeDesc + "</p></div></div>" +
+        "<h1>" + (calMode === "publish" ? "政策发布日历" : "补贴与办事截止日历") + "</h1><p>" + modeDesc + "</p></div>" +
+        '<div class="detail-actions"><button class="btn" data-action="calendar-download">' + icon("download") + " 下载日历提醒</button></div></div>" +
       '<div class="band"><div class="band-head calendar-head">' +
         '<div class="cal-mode-switch">' +
           '<button class="btn btn-sm' + (calMode === "deadline" ? " btn-primary" : "") + '" data-action="cal-mode-deadline">' + icon("calendar-clock") + " 截止日</button>" +
@@ -1349,6 +1525,39 @@
           "<p>" + icon("alert-triangle") + " 日历中的日期均为整理初稿，上线前需要逐条核对官方公告。</p>" +
         "</div>" +
       "</section>"
+    );
+  }
+
+  function renderCases() {
+    var items = readJSON(KEYS.cases, []);
+    var listHtml = items.length
+      ? items.slice().reverse().map(function (c) {
+          return '<div class="case-item"><div class="case-item-head"><strong>' + esc(c.policy || "未填写政策") + "</strong>" +
+            '<span class="badge badge-cat">' + esc(c.city || "未填写城市") + "</span></div>" +
+            "<p>" + esc(c.detail || "") + "</p>" +
+            '<div class="case-item-meta"><span>' + icon("route") + " 跑了 " + esc(String(c.trips || "未填写")) + " 趟</span>" +
+            "<span>" + icon("clipboard-list") + " 缺材料：" + esc(c.missing || "无") + "</span></div>" +
+            '<div class="case-item-tip">' + icon("lightbulb") + " 建议：" + esc(c.advice || "未填写") + "</div></div>";
+        }).join("")
+      : emptyState("首批真实办理案例正在征集，提交后经人工核验再公开展示。");
+
+    return (
+      '<div class="page-head"><div><span class="eyebrow">' + icon("users") + " 独家内容</span>" +
+        "<h1>真人办理案例</h1><p>记录“实际跑了多少趟、缺了什么材料、哪一步最容易卡住”，这些是官方不会写、但对你最有用的一手经验。</p></div></div>" +
+      '<div class="band"><div class="band-head"><h2>' + icon("inbox") + ' 已核验案例</h2></div><div class="band-body">' + listHtml + '</div></div>' +
+      '<section class="band section-gap"><div class="band-head"><h2>' + icon("pen-line") + " 分享你办过的事</h2></div>" +
+        '<div class="band-body"><form class="case-form js-form">' +
+          '<div class="inline-form-grid">' +
+            '<div class="field"><label for="caseCity">城市</label><input id="caseCity" type="text" placeholder="如：广州"></div>' +
+            '<div class="field"><label for="casePolicy">政策 / 事项</label><input id="casePolicy" type="text" placeholder="如：高校毕业生基层就业补贴"></div>' +
+            '<div class="field"><label for="caseTrips">实际跑了多少趟</label><input id="caseTrips" type="number" min="0" placeholder="如：2"></div>' +
+            '<div class="field"><label for="caseMissing">最容易被漏的材料</label><input id="caseMissing" type="text" placeholder="如：银行流水盖章件"></div>' +
+          "</div>" +
+          '<div class="field full"><label for="caseAdvice">给后来者的建议</label><textarea id="caseAdvice" placeholder="例如：先去街道核材料，别直接去区政务中心…"></textarea></div>' +
+          '<div class="field full"><label for="caseDetail">详细过程（选填）</label><textarea id="caseDetail" placeholder="可写办理顺序、耗时、注意事项"></textarea></div>' +
+          '<button class="btn btn-primary" data-action="submit-case">' + icon("send") + " 提交案例</button>" +
+          '<p class="small">提交后仅保存在本机浏览器；正式版会接入审核后公开，未核验案例不会显示为可信内容。</p>' +
+        "</form></div></section>"
     );
   }
 
@@ -1488,6 +1697,20 @@
     var parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
     var name = parts[0] || "home";
     currentRoute = name;
+    if (name !== "home" && name !== "cases" && !POLICIES.length) {
+      var loadingApp = document.getElementById("app");
+      if (loadingApp) {
+        loadingApp.innerHTML = '<div class="band"><div class="band-body loading-state">' + icon("loader") + " 正在加载政策数据…</div></div>";
+        refreshIcons();
+      }
+      loadPolicyData().then(function () {
+        render();
+      }).catch(function () {
+        var errApp = document.getElementById("app");
+        if (errApp) errApp.innerHTML = '<div class="band"><div class="band-body">' + emptyState("政策数据加载失败，请刷新重试") + "</div></div>";
+      });
+      return;
+    }
     var html = "";
     if (name === "policies") html = renderPolicies();
     else if (name === "policy" && parts[1]) html = renderDetail(parts[1]);
@@ -1496,6 +1719,7 @@
     else if (name === "calendar") html = renderCalendar();
     else if (name === "radar") html = renderRadar();
     else if (name === "compare") html = renderCompare();
+    else if (name === "cases") html = renderCases();
     else if (name === "workspace") html = renderWorkspace();
     else html = renderHome();
 
@@ -1516,6 +1740,7 @@
       calendar: "政策日历 · 穗易办",
       radar: "变化雷达 · 穗易办",
       compare: "政策对比 · 穗易办",
+      cases: "办理案例 · 穗易办",
       workspace: "核验台 · 穗易办"
     };
     document.title = titles[name] || titles.home;
@@ -1539,7 +1764,7 @@
 
     if (action === "home-search") {
       var q = document.getElementById("homeSearch");
-      filters.q = q ? q.value.trim() : "";
+      filters.q = q ? inferPolicyQuery(q.value.trim()) : "";
       filters.cat = "全部";
       policyVisible = 200;
       location.hash = "#/policies";
@@ -1646,6 +1871,7 @@
       quizStep = 0;
       quizAnswers = {};
       quizResults = null;
+      quizShowAll = false;
       saveQuizAnswers();
       rerender();
       return;
@@ -1658,7 +1884,7 @@
       return;
     }
     if (action === "add-results") {
-      var ids = (quizResults || scorePolicies()).slice(0, 8).map(function (r) { return r.p.id; });
+      var ids = (quizResults || scorePolicies()).map(function (r) { return r.p.id; });
       var merged = selectedIds();
       ids.forEach(function (x) { if (merged.indexOf(x) < 0) merged.push(x); });
       saveSelected(merged);
@@ -1666,6 +1892,23 @@
       guideMarkStep("3");
       toast("已把推荐事项加入清单");
       rerender();
+      return;
+    }
+    if (action === "quiz-show-all") {
+      quizShowAll = !quizShowAll;
+      rerender();
+      return;
+    }
+    if (action === "quiz-share") {
+      var results = quizResults || scorePolicies();
+      var city = (quizAnswers.city || {}).city || "";
+      var topTitle = results.length ? results[0].p.title : "";
+      copyText("我用穗易办自测，在" + (city || "所在城市") + "可能符合 " + results.length + " 条政策，最推荐《" + topTitle + "》等。链接：https://handword475.github.io/suiyiban-web/", "分享文案已复制");
+      track("quiz_share", { count: results.length });
+      return;
+    }
+    if (action === "quiz-poster") {
+      downloadQuizPoster();
       return;
     }
     if (action === "cl-view") {
@@ -1715,6 +1958,12 @@
       rerender();
       return;
     }
+    if (action === "calendar-download") {
+      downloadBlob("穗易办-截止提醒-" + fmtDate(Date.now()) + ".ics", buildCalendarIcs(), "text/calendar;charset=utf-8");
+      track("calendar_download", {});
+      toast("日历文件已下载，可导入手机或电脑日历");
+      return;
+    }
     if (action === "cal-next") {
       calMonth++;
       if (calMonth > 11) { calMonth = 0; calYear++; }
@@ -1733,6 +1982,31 @@
     }
     if (action === "interest-toggle") {
       el.classList.toggle("active");
+      return;
+    }
+    if (action === "submit-case") {
+      var caseForm = el.closest("form");
+      if (!caseForm) return;
+      var city = caseForm.querySelector("#caseCity").value.trim();
+      var policy = caseForm.querySelector("#casePolicy").value.trim();
+      var advice = caseForm.querySelector("#caseAdvice").value.trim();
+      if (!city || !policy || !advice) { toast("请至少填写城市、政策和一条建议"); return; }
+      var cases = readJSON(KEYS.cases, []);
+      cases.push({
+        id: "case" + Date.now(),
+        city: city,
+        policy: policy,
+        trips: caseForm.querySelector("#caseTrips").value.trim(),
+        missing: caseForm.querySelector("#caseMissing").value.trim(),
+        advice: advice,
+        detail: caseForm.querySelector("#caseDetail").value.trim(),
+        createdAt: Date.now()
+      });
+      writeJSON(KEYS.cases, cases);
+      track("case_submit", { city: city, policy: policy });
+      caseForm.reset();
+      toast("案例已保存，等待人工核验后公开");
+      rerender();
       return;
     }
     if (action === "subscribe") {
@@ -1943,6 +2217,7 @@
       } else {
         if (provSel.value && citySel.value) {
           quizAnswers.city = { province: provSel.value, city: citySel.value };
+          writeJSON(KEYS.city, quizAnswers.city);
         } else {
           delete quizAnswers.city;
         }
@@ -1969,7 +2244,7 @@
   document.addEventListener("keydown", function (e) {
     if (e.key === "Enter" && e.target && e.target.id === "homeSearch") {
       e.preventDefault();
-      filters.q = e.target.value.trim();
+      filters.q = inferPolicyQuery(e.target.value.trim());
       filters.cat = "全部";
       policyVisible = 200;
       location.hash = "#/policies";
@@ -1988,9 +2263,14 @@
 
   window.addEventListener("hashchange", render);
 
+  if ("serviceWorker" in navigator && location.protocol !== "file:") {
+    navigator.serviceWorker.register("sw.js").catch(function () {});
+  }
+
   render();
   refreshNav();
   refreshCount();
   refreshIcons();
   loadRemotePolicies();
+  locateCityFromIp();
 })();
