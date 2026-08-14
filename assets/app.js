@@ -31,6 +31,7 @@
     cases: "gzb_cases_v1"
   };
   var API_BASE = window.API_BASE || "http://127.0.0.1:8138/api/v1";
+  var WORKSPACE_ENABLED = !window.APP_CONFIG || window.APP_CONFIG.workspace !== false;
 
   var currentRoute = "home";
   var CITY_NAMES = { gz: "广州", sh: "上海" }; // 城市代码 → 显示名；新增城市在此登记（如 sz: "深圳"）
@@ -528,6 +529,7 @@
     var localVerified = Object.keys(verifications()).length;
     var combinedVerified = Math.min(total, verified + localVerified);
     var verifyPct = total ? Math.round((combinedVerified / total) * 100) : 0;
+    var handledCorrections = readJSON(KEYS.corrections, []).filter(function (c) { return c.handled; }).length;
 
     return (
       '<section class="band home-top">' +
@@ -547,6 +549,7 @@
           '<div class="home-stat"><span class="num">' + combinedVerified + '</span><span class="label">已核验条目</span></div>' +
           '<div class="home-stat"><span class="num">' + pending + '</span><span class="label">待核验条目</span></div>' +
           '<div class="home-stat"><span class="num">' + expiring + '</span><span class="label">60 天内截止</span></div>' +
+          '<div class="home-stat"><span class="num">' + handledCorrections + '</span><span class="label">纠错已处理</span></div>' +
         "</div>" +
         '<div class="home-progress"><div class="progress-wrap"><div class="progress-bar"><div class="progress-fill" style="width:' + verifyPct + '%"></div></div>' +
           '<span class="progress-text">核验进度 ' + combinedVerified + " / " + total + "（" + verifyPct + "%）</span></div>" +
@@ -570,7 +573,9 @@
               ? '<div class="row-list">' + recentPubs.map(function (p) { return rowListItem(p, "发布于 " + p.publishDate + " · " + p.category); }).join("") + "</div>"
               : emptyState("近期没有即将到期的条目")) +
         "</div>" +
-        '<div class="band"><div class="band-head"><h2>' + icon("refresh-cw") + " 最近更新</h2><a class=\"small\" href=\"#/workspace\">核验台</a></div>" +
+        '<div class="band"><div class="band-head"><h2>' + icon("refresh-cw") + " 最近更新</h2>" +
+          (WORKSPACE_ENABLED ? '<a class="small" href="#/workspace">核验台</a>' : "") +
+        "</div>" +
           (recent.length ? '<div class="row-list">' + recent.map(function (p) { return rowListItem(p, (p.updatedAt || "") + " 更新 · " + p.category); }).join("") + "</div>" : emptyState("暂无更新记录")) +
         "</div>" +
       "</section>" +
@@ -591,15 +596,19 @@
     var sel = selectedIds().indexOf(p.id) >= 0;
     var info = deadlineInfo(p);
     var metaLine = [p.source, p.publishDate, p.documentNumber].filter(Boolean).join(" · ");
+    var sourceUrl = p.sourceUrl || p.source_url || "";
+    var summary = String(p.summary || "").trim();
     return (
       '<div class="policy-row" data-cat="' + esc(p.category) + '">' +
         "<div>" +
           '<a class="policy-title" href="#/policy/' + esc(p.id) + '">' + esc(p.title) + "</a>" +
           '<div class="policy-meta">' + catBadge(p) + statusBadge(p) + deadlineBadge(p) + "</div>" +
+          (summary ? '<p class="policy-summary">' + esc(summary.slice(0, 160)) + (summary.length > 160 ? "…" : "") + "</p>" : "") +
         "</div>" +
         '<div class="policy-audience">' + (esc((p.audience || []).join("、")) || esc(metaLine)) + "</div>" +
         '<div class="policy-deadline">' + (info.urgent ? '<strong>' + esc(info.text) + "</strong>" : esc(info.text)) + "</div>" +
         '<div class="policy-actions">' +
+          (sourceUrl ? '<a class="btn btn-sm" href="' + esc(sourceUrl) + '" target="_blank" rel="noopener noreferrer" title="打开官方来源页">' + icon("external-link") + " 官方来源</a>" : "") +
           (p.attachmentUrl ? '<a class="btn btn-sm" href="' + esc(p.attachmentUrl) + '" target="_blank" rel="noopener noreferrer" title="下载官方原文附件">' + icon("download") + " 原文</a>" : "") +
           '<button class="btn btn-sm" data-action="open-policy" data-id="' + esc(p.id) + '">' + icon("eye") + " 详情</button>" +
           '<button class="btn btn-sm ' + (sel ? "btn-primary" : "") + '" data-action="toggle-select" data-id="' + esc(p.id) + '">' +
@@ -1566,8 +1575,10 @@
 
   function renderCases() {
     var items = readJSON(KEYS.cases, []);
-    var listHtml = items.length
-      ? items.slice().reverse().map(function (c) {
+    var approved = items.filter(function (c) { return c.approved; });
+    var pendingCount = items.length - approved.length;
+    var listHtml = approved.length
+      ? approved.slice().reverse().map(function (c) {
           return '<div class="case-item"><div class="case-item-head"><strong>' + esc(c.policy || "未填写政策") + "</strong>" +
             '<span class="badge badge-cat">' + esc(c.city || "未填写城市") + "</span></div>" +
             "<p>" + esc(c.detail || "") + "</p>" +
@@ -1575,7 +1586,7 @@
             "<span>" + icon("clipboard-list") + " 缺材料：" + esc(c.missing || "无") + "</span></div>" +
             '<div class="case-item-tip">' + icon("lightbulb") + " 建议：" + esc(c.advice || "未填写") + "</div></div>";
         }).join("")
-      : emptyState("首批真实办理案例正在征集，提交后经人工核验再公开展示。");
+      : emptyState("首批真实办理案例正在征集，提交后经人工核验再公开展示。" + (pendingCount ? "（你已提交 " + pendingCount + " 条，等待核验）" : ""));
 
     return (
       '<div class="page-head"><div><span class="eyebrow">' + icon("users") + " 独家内容</span>" +
@@ -1603,11 +1614,13 @@
     var tabs = [
       { id: "verify", label: "数据核验", ic: "shield-check" },
       { id: "stats", label: "本地统计", ic: "bar-chart-3" },
-      { id: "inbox", label: "提交记录", ic: "inbox" }
+      { id: "inbox", label: "提交记录", ic: "inbox" },
+      { id: "cases", label: "案例核验", ic: "users" }
     ];
     var body = "";
     if (wsTab === "verify") body = wsVerify();
     else if (wsTab === "stats") body = wsStats();
+    else if (wsTab === "cases") body = wsCases();
     else body = wsInbox();
 
     return (
@@ -1722,6 +1735,23 @@
     );
   }
 
+  function wsCases() {
+    var items = readJSON(KEYS.cases, []);
+    var pending = items.filter(function (c) { return !c.approved; });
+    return (
+      '<div class="band"><div class="band-head"><h2>' + icon("users") + " 待核验案例</h2>" +
+        '<div class="checklist-toolbar"><button class="btn btn-sm" data-action="export-csv" data-kind="cases">' + icon("download") + " 导出 CSV</button></div></div>" +
+        (pending.length ? pending.slice().reverse().map(function (c) {
+          return '<div class="correction-item"><div class="top"><strong>' + esc(c.policy || "未填写政策") + "</strong>" +
+            '<button class="btn btn-sm" data-action="approve-case" data-id="' + esc(c.id) + '">' + icon("check") + " 批准公开</button>" +
+          "</div>" +
+          '<div class="desc">' + esc(c.advice || "") + "</div>" +
+          '<div class="meta">' + esc(c.city || "未填写城市") + " · 跑了 " + esc(String(c.trips || "未填写")) + " 趟 · 缺材料：" + esc(c.missing || "无") + " · " + fmtDate(c.createdAt) + "</div></div>";
+        }).join("") : emptyState("暂无待核验案例")) +
+      "</div>"
+    );
+  }
+
   /* ---------- router ---------- */
 
   function currentRouteName() {
@@ -1733,6 +1763,10 @@
     var parts = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
     var name = parts[0] || "home";
     currentRoute = name;
+    if (name === "workspace" && !WORKSPACE_ENABLED) {
+      name = "home";
+      currentRoute = "home";
+    }
     if (name !== "home" && name !== "cases" && !POLICIES.length) {
       var loadingApp = document.getElementById("app");
       if (loadingApp) {
@@ -2040,6 +2074,7 @@
         missing: caseForm.querySelector("#caseMissing").value.trim(),
         advice: advice,
         detail: caseForm.querySelector("#caseDetail").value.trim(),
+        approved: false,
         createdAt: Date.now()
       });
       writeJSON(KEYS.cases, cases);
@@ -2125,6 +2160,15 @@
       rerender();
       return;
     }
+    if (action === "approve-case") {
+      var cases2 = readJSON(KEYS.cases, []);
+      cases2.forEach(function (c) { if (c.id === id) c.approved = true; });
+      writeJSON(KEYS.cases, cases2);
+      track("case_approve", { id: id });
+      toast("案例已批准，将在办理案例页公开");
+      rerender();
+      return;
+    }
     if (action === "export-csv") {
       var kind = el.getAttribute("data-kind");
       if (kind === "pending") {
@@ -2142,6 +2186,11 @@
         var cors = readJSON(KEYS.corrections, []);
         downloadCsv("纠错记录-" + fmtDate(Date.now()) + ".csv", [["时间", "政策", "类型", "描述", "联系方式", "状态"]].concat(cors.map(function (c) {
           return [fmtDate(c.createdAt), c.policyTitle, c.type, c.desc, c.contact, c.handled ? "已处理" : "待处理"];
+        })));
+      } else if (kind === "cases") {
+        var caseRows = readJSON(KEYS.cases, []);
+        downloadCsv("办理案例-" + fmtDate(Date.now()) + ".csv", [["时间", "城市", "政策", "跑了多少趟", "缺材料", "建议", "状态"]].concat(caseRows.map(function (c) {
+          return [fmtDate(c.createdAt), c.city, c.policy, c.trips, c.missing, c.advice, c.approved ? "已公开" : "待核验"];
         })));
       }
       return;

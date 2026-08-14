@@ -27,7 +27,6 @@
         <a href="#/radar" data-route="radar">变化雷达</a>
         <a href="#/compare" data-route="compare">政策对比</a>
         <a href="#/cases" data-route="cases">办理案例</a>
-        <a href="#/workspace" data-route="workspace">核验台</a>
       </nav>
       <a class="header-count" href="#/checklist" title="查看我的清单">
         <i data-lucide="clipboard-list" aria-hidden="true"></i>
@@ -39,7 +38,6 @@
   <div class="draft-banner" role="note">
     <span class="banner-dot"></span>
     <span>初稿数据：所有条目待人工核验官方来源，上线前请逐条确认；具体政策以官方最新文件为准。</span>
-    <a href="#/workspace">进入核验台</a>
   </div>
 
   <main id="app" class="app" tabindex="-1"></main>
@@ -62,6 +60,7 @@
   <script src="assets/lucide.min.js?v=0.1.9"></script>
   <script src="assets/china-regions.js?v=0.1.9"></script>
   <script src="data/home.js?v=0.1.9"></script>
+  <script>window.APP_CONFIG = { workspace: false };</script>
   <script src="assets/app.js?v=0.1.9"></script>
 </body>
 </html>
