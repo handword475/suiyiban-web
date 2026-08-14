@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>穗易办 · 全国补贴办事指南（v0.1.6 验证版）</title>
+  <meta name="description" content="全国补贴、办事、政策一站式查询：条件自测、材料清单、政策日历，全部标注官方来源与核验状态。">
+  <link rel="stylesheet" href="assets/styles.css?v=0.1.6">
+</head>
+<body>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="#/" aria-label="穗易办首页">
+        <span class="brand-mark">穗</span>
+        <span class="brand-name">穗易办</span>
+        <span class="brand-sub">全国补贴办事指南</span>
+      </a>
+      <nav class="main-nav" aria-label="主导航">
+        <a href="#/" data-route="home">首页</a>
+        <a href="#/policies" data-route="policies">政策库</a>
+        <a href="#/quiz" data-route="quiz">条件自测</a>
+        <a href="#/checklist" data-route="checklist">清单生成</a>
+        <a href="#/calendar" data-route="calendar">政策日历</a>
+        <a href="#/radar" data-route="radar">变化雷达</a>
+        <a href="#/compare" data-route="compare">政策对比</a>
+        <a href="#/workspace" data-route="workspace">核验台</a>
+      </nav>
+      <button id="bgmToggle" class="bgm-toggle" aria-label="开启背景音乐" title="开启背景音乐">
+        <i data-lucide="music-off" aria-hidden="true"></i>
+      </button>
+      <a class="header-count" href="#/checklist" title="查看我的清单">
+        <i data-lucide="clipboard-list" aria-hidden="true"></i>
+        <span id="checklistCount">0</span>
+      </a>
+    </div>
+  </header>
+
+  <div class="draft-banner" role="note">
+    <span class="banner-dot"></span>
+    <span>初稿数据：所有条目待人工核验官方来源，上线前请逐条确认；具体政策以官方最新文件为准。</span>
+    <a href="#/workspace">进入核验台</a>
+  </div>
+
+  <main id="app" class="app" tabindex="-1"></main>
+
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div>
+        <strong>穗易办</strong>
+        <span>全国补贴与办事指南 · v0.1.6 验证版</span>
+      </div>
+      <p>本站内容为整理初稿，仅供快速定位与流程参考，不构成官方承诺；办理前请以政府最新公布文件为准。</p>
+    </div>
+  </footer>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <button id="backTop" class="back-to-top" aria-label="回到顶部" title="回到顶部">
+    <i data-lucide="arrow-up" aria-hidden="true"></i>
+  </button>
+
+  <script src="assets/lucide.min.js?v=0.1.6"></script>
+  <script src="assets/china-regions.js?v=0.1.6"></script>
+  <script src="data/policies.js?v=0.1.6"></script>
+  <script src="assets/app.js?v=0.1.6"></script>
+</body>
+</html>
