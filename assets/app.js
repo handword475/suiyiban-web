@@ -528,6 +528,7 @@
     var localVerified = Object.keys(verifications()).length;
     var combinedVerified = Math.min(total, verified + localVerified);
     var verifyPct = total ? Math.round((combinedVerified / total) * 100) : 0;
+    var handledCorrections = readJSON(KEYS.corrections, []).filter(function (c) { return c.handled; }).length;
 
     return (
       '<section class="band home-top">' +
@@ -547,6 +548,7 @@
           '<div class="home-stat"><span class="num">' + combinedVerified + '</span><span class="label">已核验条目</span></div>' +
           '<div class="home-stat"><span class="num">' + pending + '</span><span class="label">待核验条目</span></div>' +
           '<div class="home-stat"><span class="num">' + expiring + '</span><span class="label">60 天内截止</span></div>' +
+          '<div class="home-stat"><span class="num">' + handledCorrections + '</span><span class="label">纠错已处理</span></div>' +
         "</div>" +
         '<div class="home-progress"><div class="progress-wrap"><div class="progress-bar"><div class="progress-fill" style="width:' + verifyPct + '%"></div></div>' +
           '<span class="progress-text">核验进度 ' + combinedVerified + " / " + total + "（" + verifyPct + "%）</span></div>" +
