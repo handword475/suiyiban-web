@@ -1452,6 +1452,39 @@
     return lines.join("\r\n");
   }
 
+  function enableNotifications() {
+    if (!("Notification" in window)) {
+      toast("当前浏览器不支持系统通知");
+      return;
+    }
+    var request = Notification.requestPermission();
+    if (request && request.then) {
+      request.then(function (perm) {
+        if (perm === "granted") showUpcomingNotification();
+        else toast("未开启系统通知，仍可使用 RSS 或日历提醒");
+      });
+    } else {
+      toast("请允许浏览器通知后使用该提醒");
+    }
+  }
+
+  function showUpcomingNotification() {
+    var ups = upcomingDeadlines(30).slice(0, 3);
+    if (!ups.length) {
+      toast("未来 30 天内暂无截止事项");
+      return;
+    }
+    try {
+      new Notification("穗易办 · 截止提醒", {
+        body: "未来 30 天内共有 " + upcomingDeadlines(30).length + " 条事项即将截止，最近的是《" + ups[0].title + "》。",
+        icon: "assets/icon.svg"
+      });
+      toast("已发送一条当前截止提醒，正式版接入后台后可定时推送");
+    } catch (e) {
+      toast("通知发送失败，请使用 RSS 或日历提醒");
+    }
+  }
+
   function renderCalendar() {
     var year = calYear, month = calMonth;
     var first = new Date(year, month, 1);
@@ -1486,7 +1519,10 @@
     return (
       '<div class="page-head"><div><span class="eyebrow">' + icon("calendar-days") + " 政策日历</span>" +
         "<h1>" + (calMode === "publish" ? "政策发布日历" : "补贴与办事截止日历") + "</h1><p>" + modeDesc + "</p></div>" +
-        '<div class="detail-actions"><button class="btn" data-action="calendar-download">' + icon("download") + " 下载日历提醒</button></div></div>" +
+        '<div class="detail-actions">' +
+          '<button class="btn" data-action="enable-notify">' + icon("bell-ring") + " 浏览器提醒</button>" +
+          '<button class="btn" data-action="calendar-download">' + icon("download") + " 下载日历提醒</button>" +
+        "</div></div>" +
       '<div class="band"><div class="band-head calendar-head">' +
         '<div class="cal-mode-switch">' +
           '<button class="btn btn-sm' + (calMode === "deadline" ? " btn-primary" : "") + '" data-action="cal-mode-deadline">' + icon("calendar-clock") + " 截止日</button>" +
@@ -1962,6 +1998,10 @@
       downloadBlob("穗易办-截止提醒-" + fmtDate(Date.now()) + ".ics", buildCalendarIcs(), "text/calendar;charset=utf-8");
       track("calendar_download", {});
       toast("日历文件已下载，可导入手机或电脑日历");
+      return;
+    }
+    if (action === "enable-notify") {
+      enableNotifications();
       return;
     }
     if (action === "cal-next") {
