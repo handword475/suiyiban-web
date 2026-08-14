@@ -764,6 +764,14 @@ svg {
   margin-top: 6px;
 }
 
+.policy-summary {
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+  max-width: 720px;
+}
+
 .policy-audience {
   font-size: 13px;
   color: var(--muted);
